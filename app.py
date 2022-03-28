@@ -27,6 +27,11 @@ metrics = {
             "title": "Monthly Active",
             "measure": "monthly_active",
             "description": "The number of unique users, who placed at least one order in the last 28 days."
+            },
+        "DAU / MAU": {
+            "title": "DAU / MAU",
+            "measure": "dau_to_mau",
+            "description": "The ratio of daily active users over monthly active users. Expressed as a percentage; rounded to 2 decimal places."
             }
         }
 
@@ -34,7 +39,7 @@ conn = create_engine(st.secrets['cube_connection_string'])
 
 selected_metric_key = st.sidebar.selectbox(
      'Select Metric',
-     ('Daily Active', 'Weekly Active', 'Monthly Active'), index=0
+     ('Daily Active', 'Weekly Active', 'Monthly Active', 'DAU / MAU'), index=0
 )
 
 st.sidebar.markdown("🔗 [Tutorial]()")
@@ -79,11 +84,12 @@ WHERE time >= '{from_date}' AND time < '{to_date}'
 
 df = pandas.read_sql_query(sql, conn)
 df['time'] = [parser.parse(d) for d in df['time']]
-df[measure] = [int(d) for d in df[measure]]
+df[measure] = [float(d) for d in df[measure]]
+y_axis = alt.Axis(format='%') if measure == 'dau_to_mau' else alt.Axis()
 
 c = alt.Chart(df).mark_line().encode(
     x = 'time',
-    y = measure
+    y = alt.Y(measure, axis=y_axis)
 )
 st.altair_chart(c, use_container_width=True)
 
@@ -99,12 +105,13 @@ cube('ActiveUsers', {
 
   measures: {
     weekly_active: {
-      sql: `user_id`,
-      type: `countDistinct`,
+      sql: `user_id`,
+      type: `countDistinct`,
       rollingWindow: {
         trailing: `7 day`,
         offset: `start`,
-      }
+      },
+      description: `The number of unique users, who placed at least one order in the last 7 days.`
     },
 
     daily_active: {
@@ -113,7 +120,8 @@ cube('ActiveUsers', {
       rollingWindow: {
         trailing: `24 hour`,
         offset: `start`,
-      }
+      },
+      description: `The number of unique users, who placed at least one order in the last 24 hours.`
     },
 
     monthly_active: {
@@ -122,7 +130,15 @@ cube('ActiveUsers', {
       rollingWindow: {
         trailing: `28 day`,
         offset: `start`,
-      }
+      },
+      description: `The number of unique users, who placed at least one order in the last 28 days.`
+    },
+
+    dau_to_mau: {
+      sql: `ROUND(${daily_active}::numeric / NULLIF(${monthly_active}, 0) * 100.0, 2)`,
+      type: `number`,
+      format: `percent`,
+      description: `The ratio of daily active users over monthly active users. Expressed as a percentage; rounded to 2 decimal places.`,
     }
   },
 
